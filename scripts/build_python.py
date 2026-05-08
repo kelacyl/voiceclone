@@ -83,12 +83,39 @@ def clean_release():
 def write_runtime_hook():
     hook_content = '''
 # PyInstaller runtime hook for CosyVoice
-import sys, os
+import sys, os, inspect, re
+
 _root = os.path.join(os.path.dirname(__file__), "cosyvoice_src")
 _matcha = os.path.join(_root, "third_party", "Matcha-TTS")
 if os.path.isdir(_matcha):
     sys.path.insert(0, _matcha)
 sys.path.insert(0, _root)
+
+# TorchScript 编译时需要 inspect.getsource() 读取 .py 源码，但 PyInstaller
+# 默认只打包 .pyc。此处将 inspect.getsource 重定向到 cosyvoice_src 目录。
+_orig_getsource = inspect.getsource
+
+def _patched_getsource(obj):
+    try:
+        return _orig_getsource(obj)
+    except OSError:
+        pass
+    # PyInstaller 环境下 .py 源码不可用，从 cosyvoice_src 按模块名查找
+    module = getattr(obj, "__module__", "")
+    if module:
+        _parts = module.split(".")
+        for _prefix in ["cosyvoice", "matcha"]:
+            if _prefix in _parts:
+                _idx = _parts.index(_prefix)
+                _rel = os.path.join(*_parts[_idx:]) + ".py"
+                _candidate = os.path.join(_root, _rel)
+                if os.path.isfile(_candidate):
+                    with open(_candidate, "r", encoding="utf-8") as f:
+                        return f.read()
+                break
+    raise OSError(f"source not found for {getattr(obj, '__qualname__', obj)}")
+
+inspect.getsource = _patched_getsource
 '''
     hooks_dir = PYTHON_DIR / "_hooks"
     hooks_dir.mkdir(exist_ok=True)
