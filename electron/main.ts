@@ -128,7 +128,7 @@ function stopPythonBackend(): void {
 
 // ─── HTTP ─────────────────────────────────────────────────────────────
 
-function pythonRequest(endpoint: string, method = 'GET', body?: any): Promise<any> {
+function pythonRequest(endpoint: string, method = 'GET', body?: any, timeoutMs = 600000): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = http.request({
       hostname: PYTHON_HOST, port: PYTHON_PORT,
@@ -140,7 +140,7 @@ function pythonRequest(endpoint: string, method = 'GET', body?: any): Promise<an
       res.on('end', () => { try { resolve(JSON.parse(data)) } catch { resolve(data) } })
     })
     req.on('error', reject)
-    req.setTimeout(600000, () => { req.destroy(); reject(new Error('请求超时')) })
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('请求超时，CPU 模式下大模型推理较慢，请尝试用更短的文本或切换到 300M 模型')) })
     if (body) req.write(JSON.stringify(body))
     req.end()
   })
@@ -214,7 +214,7 @@ ipcMain.handle('clone-voice', async (_, req: {
   mode: string; text: string; prompt_text?: string
   prompt_audio: string; instruct_text?: string; stream?: boolean
 }) => {
-  try { return await pythonRequest('/clone', 'POST', req) } catch (e: any) {
+  try { return await pythonRequest('/clone', 'POST', req, 1800000) } catch (e: any) {
     return { success: false, error: e.message }
   }
 })

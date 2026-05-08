@@ -332,7 +332,13 @@ async def health():
         "status": "ok",
         "models_loaded": _models_loaded,
         "gpu_available": gpu_ok,
-        "warning": None if gpu_ok else "CPU 推理模式，速度较慢 (RTF ~3-8)，单句文本预计 10-30 秒",
+        "warning": (
+            None if gpu_ok else
+            "CPU 推理 CosyVoice3-0.5B 极慢 (RTF 15-30)，一句话可能需 3-10 分钟。"
+            "建议切换到 CosyVoice-300M-Instruct 模型（RTF 3-8），或安装 NVIDIA GPU。"
+            if "0.5B" in os.path.basename(MODELS_DIR) or "CosyVoice3" in os.path.basename(MODELS_DIR)
+            else "CPU 推理模式，速度较慢 (RTF ~3-8)，单句文本预计 10-30 秒"
+        ),
     }
 
 
