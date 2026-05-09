@@ -133,5 +133,6 @@ MIT
 
 ## 赞助
 如您觉得该项目对您有帮助，欢迎赞助
-<img width="779" height="1150" alt="_cgi-bin_mmwebwx-bin_webwxgetmsgimg__ MsgID=1571194012782347709 skey=@crypt_7d7e9bc1_06b7f4614ba6b06b7b2afb554d58ed8b mmweb_appid=wx_webfilehelper" src="https://github.com/user-attachments/assets/7b9183fe-0017-4a9d-9c66-cd58e4d43bd0" />
+<img width="383" height="575" alt="_cgi-bin_mmwebwx-bin_webwxgetmsgimg__ MsgID=1571194012782347709 skey=@crypt_7d7e9bc1_06b7f4614ba6b06b7b2afb554d58ed8b mmweb_appid=wx_webfilehelper" src="https://github.com/user-attachments/assets/809f7abd-2cf1-413a-82e4-8ee908bbbe72" />
+
 
