@@ -130,3 +130,7 @@ npm run build:win
 ## 许可
 
 MIT
+
+## 赞助
+如您觉得该项目对您有帮助，欢迎赞助
+<img width="1708" height="2560" alt="_cgi-bin_mmwebwx-bin_webwxgetmsgimg__ MsgID=1571194012782347709 skey=@crypt_7d7e9bc1_06b7f4614ba6b06b7b2afb554d58ed8b mmweb_appid=wx_webfilehelper" src="https://github.com/user-attachments/assets/35bf5903-e34e-4c26-b79b-4ae7fe79f931" />
