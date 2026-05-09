@@ -4,6 +4,7 @@ import fs from 'fs'
 import { spawn, ChildProcess } from 'child_process'
 import http from 'http'
 import { getConfigValue, setConfigValue } from './db'
+import { validateLicenseKey, getLicenseInfo, incrementUsage, getMachineId } from './license'
 import { downloadModelFilesViaPython, getDownloadProgress, isModelValid, deleteModelDir, countExistingFiles, deleteFilesInDir } from './download-manager'
 import { MIRRORS, getActiveMirror, getResolvedCosyVoiceModels, getModelAllUrls, getModelDownloadId, getModelFileGroups } from './mirror-config'
 
@@ -214,6 +215,11 @@ ipcMain.handle('clone-voice', async (_, req: {
   mode: string; text: string; prompt_text?: string
   prompt_audio: string; instruct_text?: string; stream?: boolean
 }) => {
+  // Check license usage
+  const usage = incrementUsage()
+  if (!usage.allowed) {
+    return { success: false, error: `本月免费额度 (${getLicenseInfo().monthLimit} 次) 已用完，请前往设置页激活序列码` }
+  }
   try { return await pythonRequest('/clone', 'POST', req, 1800000) } catch (e: any) {
     return { success: false, error: e.message }
   }
@@ -259,6 +265,24 @@ ipcMain.handle('select-output-dir', async () => {
 })
 
 ipcMain.handle('get-app-version', async () => app.getVersion())
+
+// ─── IPC: License ──────────────────────────────────────────────────────
+
+ipcMain.handle('validate-license', async (_, key: string) => {
+  return validateLicenseKey(key)
+})
+
+ipcMain.handle('get-license-info', async () => {
+  return getLicenseInfo()
+})
+
+ipcMain.handle('increment-usage', async () => {
+  return incrementUsage()
+})
+
+ipcMain.handle('get-machine-id', async () => {
+  return getMachineId()
+})
 
 // ─── IPC: Models ──────────────────────────────────────────────────────
 

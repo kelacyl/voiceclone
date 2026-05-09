@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Download, RefreshCw, CheckCircle, AlertCircle, FolderOpen, Globe, RotateCw, FileCheck, Package } from 'lucide-react'
+import { Download, RefreshCw, CheckCircle, AlertCircle, FolderOpen, Globe, RotateCw, FileCheck, Package, Key, Shield, ShieldCheck, Copy } from 'lucide-react'
 import DownloadProgressModal from '../components/DownloadProgressModal'
 
 const api = window.voiceCloneAPI
@@ -19,6 +19,14 @@ export default function Settings() {
   const [showProgress, setShowProgress] = useState(false)
   const [error, setError] = useState('')
   const [modelFileCounts, setModelFileCounts] = useState<Record<string, FileCounts>>({})
+
+  // License
+  const [licenseKey, setLicenseKey] = useState('')
+  const [licenseInfo, setLicenseInfo] = useState<LicenseInfo | null>(null)
+  const [licenseMsg, setLicenseMsg] = useState('')
+  const [licenseError, setLicenseError] = useState(false)
+  const [machineId, setMachineId] = useState('')
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -45,6 +53,16 @@ export default function Settings() {
         const status = await api.modelStatus()
         setModelsDir(status.models_dir)
       } catch { /* 后端未启动，稍后刷新 */ }
+
+      // 加载序列码状态
+      try {
+        const [info, mid] = await Promise.all([
+          api.getLicenseInfo(),
+          api.getMachineId(),
+        ])
+        setLicenseInfo(info)
+        setMachineId(mid)
+      } catch { /* ignore */ }
     } catch (e: any) {
       setError(e.message)
     }
@@ -120,6 +138,29 @@ export default function Settings() {
     }
   }
 
+  async function activateLicense() {
+    if (!licenseKey.trim()) return
+    setLicenseMsg('')
+    setLicenseError(false)
+    try {
+      const ok = await api.validateLicense(licenseKey.trim())
+      if (ok) {
+        await api.setConfig({ license_key: licenseKey.trim() })
+        const info = await api.getLicenseInfo()
+        setLicenseInfo(info)
+        setLicenseMsg('激活成功！')
+        setLicenseError(false)
+        setLicenseKey('')
+      } else {
+        setLicenseMsg('序列码无效')
+        setLicenseError(true)
+      }
+    } catch {
+      setLicenseMsg('验证失败')
+      setLicenseError(true)
+    }
+  }
+
   const activeMirrorId = models.length > 0 ? models[0]?.downloadId : ''
 
   return (
@@ -132,6 +173,77 @@ export default function Settings() {
           <button onClick={() => setError('')} className="ml-3 underline">关闭</button>
         </div>
       )}
+
+      {/* 序列码激活 */}
+      <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+        <h3 className="text-sm font-medium text-gray-300 mb-3">序列码激活</h3>
+
+        {/* License status */}
+        {licenseInfo && (
+          <div className={`p-3 rounded mb-3 ${licenseInfo.isActivated ? 'bg-green-900/20 border border-green-800' : 'bg-yellow-900/20 border border-yellow-800'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              {licenseInfo.isActivated ? (
+                <><ShieldCheck className="w-4 h-4 text-green-400" /><span className="text-sm text-green-400 font-medium">已激活</span></>
+              ) : (
+                <><Shield className="w-4 h-4 text-yellow-400" /><span className="text-sm text-yellow-400 font-medium">未激活 — 试用模式</span></>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">
+              本月已使用 <span className="text-gray-200 font-mono">{licenseInfo.usageCount}</span> / <span className="text-gray-200 font-mono">{licenseInfo.monthLimit}</span> 次
+              {!licenseInfo.isActivated && licenseInfo.usageCount >= licenseInfo.monthLimit && (
+                <span className="text-red-400 ml-2">额度已用完，请输入序列码解锁</span>
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* License input */}
+        {!licenseInfo?.isActivated && (
+          <div className="flex items-center gap-2">
+            <Key className="w-4 h-4 text-gray-500 shrink-0" />
+            <input
+              value={licenseKey}
+              onChange={(e) => { setLicenseKey(e.target.value); setLicenseMsg('') }}
+              placeholder="输入序列码 (格式: XXXX-XXXX-XXXX-XXXX)"
+              className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-purple-500 font-mono"
+              onKeyDown={(e) => e.key === 'Enter' && activateLicense()}
+            />
+            <button
+              onClick={activateLicense}
+              disabled={!licenseKey.trim()}
+              className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-500 transition text-sm disabled:opacity-40 shrink-0"
+            >
+              激活
+            </button>
+          </div>
+        )}
+        {licenseMsg && (
+          <p className={`text-xs mt-2 ${licenseError ? 'text-red-400' : 'text-green-400'}`}>{licenseMsg}</p>
+        )}
+
+        {/* Machine ID */}
+        {!licenseInfo?.isActivated && machineId && (
+          <div className="mt-3 p-2 rounded bg-gray-800/50 border border-gray-700/50">
+            <p className="text-xs text-gray-500 mb-1">本机机器码（提供给开发者以获取绑定序列码）</p>
+            <div className="flex items-center gap-2">
+              <code className="text-xs text-gray-300 font-mono break-all select-all flex-1">{machineId}</code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(machineId); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+                className="p-1 rounded hover:bg-gray-700 transition shrink-0"
+                title="复制机器码"
+              >
+                <Copy className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+              {copied && <span className="text-xs text-green-400 shrink-0">已复制</span>}
+            </div>
+          </div>
+        )}
+        {!licenseInfo?.isActivated && (
+          <p className="text-xs text-gray-600 mt-2">
+            获取序列码请联系 <a href="mailto:kyl2059@qq.com" className="text-purple-400 hover:text-purple-300 underline">kyl2059@qq.com</a>
+          </p>
+        )}
+      </div>
 
       {/* 下载地址 */}
       <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">

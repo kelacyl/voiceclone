@@ -34,6 +34,12 @@ declare global {
     error?: string
   }
 
+  interface LicenseInfo {
+    isActivated: boolean
+    usageCount: number
+    monthLimit: number
+  }
+
   interface Window {
     voiceCloneAPI: {
       // Python backend
@@ -96,6 +102,12 @@ declare global {
 
       // App
       getAppVersion: () => Promise<string>
+
+      // License
+      validateLicense: (key: string) => Promise<boolean>
+      getLicenseInfo: () => Promise<LicenseInfo>
+      incrementUsage: () => Promise<{ allowed: boolean; remaining: number }>
+      getMachineId: () => Promise<string>
     }
   }
 }

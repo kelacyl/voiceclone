@@ -91,28 +91,39 @@ if os.path.isdir(_matcha):
     sys.path.insert(0, _matcha)
 sys.path.insert(0, _root)
 
-# TorchScript 编译时需要 inspect.getsource() 读取 .py 源码，但 PyInstaller
-# 默认只打包 .pyc。此处将 inspect.getsource 重定向到 cosyvoice_src 目录。
+# TorchScript compilation requires inspect.getsource() to read .py source,
+# but PyInstaller only bundles .pyc by default. Redirect to bundled source dirs.
 _orig_getsource = inspect.getsource
+
+# Map of package prefixes -> source root directories (relative to hook dir)
+_SOURCE_ROOTS = {
+    "cosyvoice": "cosyvoice_src",
+    "matcha": "cosyvoice_src/third_party/Matcha-TTS",
+    "x_transformers": "_ext_src/x_transformers",
+    "einops": "_ext_src/einops",
+}
+
+def _find_source(module_parts):
+    for prefix, rel_root in _SOURCE_ROOTS.items():
+        if prefix in module_parts:
+            idx = module_parts.index(prefix)
+            rel = os.path.join(*module_parts[idx:]) + ".py"
+            candidate = os.path.join(os.path.dirname(__file__), rel_root, rel)
+            if os.path.isfile(candidate):
+                return candidate
+    return None
 
 def _patched_getsource(obj):
     try:
         return _orig_getsource(obj)
     except OSError:
         pass
-    # PyInstaller 环境下 .py 源码不可用，从 cosyvoice_src 按模块名查找
     module = getattr(obj, "__module__", "")
     if module:
-        _parts = module.split(".")
-        for _prefix in ["cosyvoice", "matcha"]:
-            if _prefix in _parts:
-                _idx = _parts.index(_prefix)
-                _rel = os.path.join(*_parts[_idx:]) + ".py"
-                _candidate = os.path.join(_root, _rel)
-                if os.path.isfile(_candidate):
-                    with open(_candidate, "r", encoding="utf-8") as f:
-                        return f.read()
-                break
+        fpath = _find_source(module.split("."))
+        if fpath:
+            with open(fpath, "r", encoding="utf-8") as f:
+                return f.read()
     raise OSError(f"source not found for {getattr(obj, '__qualname__', obj)}")
 
 inspect.getsource = _patched_getsource
@@ -120,8 +131,37 @@ inspect.getsource = _patched_getsource
     hooks_dir = PYTHON_DIR / "_hooks"
     hooks_dir.mkdir(exist_ok=True)
     hook_path = hooks_dir / "cosyvoice_hook.py"
-    hook_path.write_text(hook_content)
+    hook_path.write_text(hook_content, encoding='utf-8')
     return hook_path
+
+
+def copy_ext_sources():
+    """Copy source .py files of external packages that TorchScript JIT needs."""
+    import importlib
+    ext_src_dir = PYTHON_DIR / "_ext_src"
+    if ext_src_dir.exists():
+        shutil.rmtree(ext_src_dir)
+    ext_src_dir.mkdir(parents=True)
+
+    packages = ["x_transformers", "einops"]
+    for pkg_name in packages:
+        try:
+            pkg = importlib.import_module(pkg_name)
+            pkg_path = Path(pkg.__path__[0])
+            dest = ext_src_dir / pkg_name
+            shutil.copytree(
+                pkg_path, dest,
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.so', '*.pyd'),
+            )
+            # Only copy .py files to keep size minimal
+            for root, dirs, files in os.walk(dest):
+                for f in files:
+                    if not f.endswith('.py'):
+                        os.remove(os.path.join(root, f))
+            print(f"  Copied {pkg_name} source -> {dest}")
+        except ImportError:
+            print(f"  Warning: {pkg_name} not found, skipping")
+    return ext_src_dir
 
 
 def build(cpu_only: bool):
@@ -130,6 +170,7 @@ def build(cpu_only: bool):
     clean_release()
 
     hook_path = write_runtime_hook()
+    ext_src_dir = copy_ext_sources()
     main_script = PYTHON_DIR / "cosyvoice_service.py"
     icon = PROJECT_ROOT / "assets" / "icon.ico"
 
@@ -149,6 +190,7 @@ def build(cpu_only: bool):
         # 不显示控制台 (FastAPI 输出走 stdout pipe, 不需要窗口)
         "--windowed",
         "--add-data", f"{COSYVOICE_SRC}{os.pathsep}cosyvoice_src",
+        "--add-data", f"{ext_src_dir}{os.pathsep}_ext_src",
         "--paths", str(COSYVOICE_SRC),
         "--paths", str(COSYVOICE_SRC / "third_party" / "Matcha-TTS"),
         "--runtime-hook", str(hook_path),

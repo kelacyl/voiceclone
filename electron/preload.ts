@@ -52,4 +52,10 @@ contextBridge.exposeInMainWorld('voiceCloneAPI', {
 
   // 版本
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+
+  // 序列码激活
+  validateLicense: (key: string) => ipcRenderer.invoke('validate-license', key),
+  getLicenseInfo: () => ipcRenderer.invoke('get-license-info'),
+  incrementUsage: () => ipcRenderer.invoke('increment-usage'),
+  getMachineId: () => ipcRenderer.invoke('get-machine-id'),
 })

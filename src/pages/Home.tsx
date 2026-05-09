@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Mic, Play, RefreshCw, AlertCircle, CheckCircle, FolderOpen, RotateCw, FileText, FolderOutput, Package } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Mic, Play, RefreshCw, AlertCircle, CheckCircle, FolderOpen, RotateCw, FileText, FolderOutput, Package, Loader2 } from 'lucide-react'
 
 const api = window.voiceCloneAPI
 
@@ -19,8 +19,15 @@ export default function Home() {
   const [modelDir, setModelDir] = useState('')
   const [lastError, setLastError] = useState('')
   const [gpuAvailable, setGpuAvailable] = useState(false)
+  const [loadingModel, setLoadingModel] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [switchingModel, setSwitchingModel] = useState(false)
+
+  // Startup modal
+  const [showStartupModal, setShowStartupModal] = useState(false)
+  const [startupStage, setStartupStage] = useState<'starting' | 'loading'>('starting')
+  const [startupElapsed, setStartupElapsed] = useState(0)
+  const startupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [activeModel, setActiveModel] = useState('')
   const [downloadedModels, setDownloadedModels] = useState<string[]>([])
@@ -58,13 +65,7 @@ export default function Home() {
       setGpuAvailable(ms.gpu_available)
       setStep(health.status === 'ok' && ms.loaded ? 'ready' : 'idle')
 
-      // 加载已下载模型列表和当前模型
-      const [models, cfg] = await Promise.all([
-        api.listDownloadedModels(),
-        api.getConfig(),
-      ])
-      setDownloadedModels(models)
-      setActiveModel(cfg.voiceModel)
+      await loadModelList()
     } catch {
       setBackendReady(false)
     }
@@ -92,25 +93,90 @@ export default function Home() {
   }
 
   async function startBackend() {
+    setShowStartupModal(true)
+    setStartupStage('starting')
+    setStartupElapsed(0)
     const result = await api.startBackend()
     if (result.success) {
-      await new Promise(r => setTimeout(r, 3000))
-      await checkStatus()
+      setStartupStage('loading')
+      await pollUntilReady()
     } else {
+      setShowStartupModal(false)
       setError(result.error || '启动失败')
       setStep('error')
     }
   }
 
   async function restartBackend() {
+    setShowStartupModal(true)
+    setStartupStage('starting')
+    setStartupElapsed(0)
     const result = await api.startBackend(true)
     if (result.success) {
-      await new Promise(r => setTimeout(r, 5000))
-      await checkStatus()
+      setStartupStage('loading')
+      await pollUntilReady()
     } else {
+      setShowStartupModal(false)
       setError(result.error || '重启失败')
       setStep('error')
     }
+  }
+
+  async function pollUntilReady() {
+    // Poll /models/status until model is loaded or timeout (5 min for CPU mode)
+    setLoadingModel(true)
+    let ready = false
+
+    const startTime = Date.now()
+    startupTimerRef.current = setInterval(() => {
+      setStartupElapsed(Math.floor((Date.now() - startTime) / 1000))
+    }, 1000)
+
+    const maxAttempts = 150
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const ms = await api.modelStatus()
+        setBackendReady(true)
+        setModelExists(ms.model_exists)
+        setLastError(ms.last_error || '')
+        setGpuAvailable(ms.gpu_available)
+        if (ms.loaded) {
+          setModelsOk(true)
+          setModelDir(ms.models_dir)
+          setStep('ready')
+          await loadModelList()
+          ready = true
+          break
+        }
+      } catch {
+        // Backend not reachable yet
+      }
+      await new Promise(r => setTimeout(r, 2000))
+    }
+
+    // Clean up timer and modal
+    if (startupTimerRef.current) {
+      clearInterval(startupTimerRef.current)
+      startupTimerRef.current = null
+    }
+    setShowStartupModal(false)
+    setLoadingModel(false)
+
+    // On timeout, fall back to checkStatus for error display
+    if (!ready) {
+      await checkStatus()
+    }
+  }
+
+  async function loadModelList() {
+    try {
+      const [models, cfg] = await Promise.all([
+        api.listDownloadedModels(),
+        api.getConfig(),
+      ])
+      setDownloadedModels(models)
+      setActiveModel(cfg.voiceModel)
+    } catch { /* ignore */ }
   }
 
   async function reloadModel() {
@@ -192,6 +258,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <div className="max-w-2xl mx-auto p-6">
       {/* 状态栏 */}
       <div className="flex items-center gap-4 mb-6 p-3 rounded-lg bg-gray-900 border border-gray-800">
@@ -245,9 +312,14 @@ export default function Home() {
           <p className="text-gray-400">
             {!backendReady ? 'Python 后端未启动，请点击下方按钮启动' : ''}
             {backendReady && !modelExists ? `模型 "${MODEL_NAMES[activeModel] || activeModel}" 尚未下载，请前往设置页下载` : ''}
-            {backendReady && modelExists ? `模型 "${MODEL_NAMES[activeModel] || activeModel}" 加载失败` : ''}
+            {backendReady && modelExists && loadingModel ? (
+              <span className="flex items-center justify-center gap-2">
+                <RotateCw className="w-4 h-4 animate-spin" />
+                模型加载中...
+              </span>
+            ) : backendReady && modelExists ? `模型 "${MODEL_NAMES[activeModel] || activeModel}" 加载失败` : ''}
           </p>
-          {lastError && (
+          {lastError && !loadingModel && (
             <div className="p-3 rounded bg-red-900/30 border border-red-800 text-left max-w-lg mx-auto">
               <p className="text-xs text-red-400 mb-1 font-medium">错误详情:</p>
               <pre className="text-xs text-red-300 whitespace-pre-wrap break-all">{lastError}</pre>
@@ -258,7 +330,7 @@ export default function Home() {
               启动 CosyVoice 服务
             </button>
           )}
-          {backendReady && modelExists && (
+          {backendReady && modelExists && !loadingModel && (
             <button onClick={reloadModel} disabled={reloading} className="px-6 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 transition font-medium disabled:opacity-50">
               <RotateCw className={`w-4 h-4 inline mr-2 ${reloading ? 'animate-spin' : ''}`} />
               {reloading ? '加载中...' : '重新加载模型'}
@@ -423,6 +495,29 @@ export default function Home() {
         </div>
       )}
     </div>
+
+      {/* 启动加载弹窗 */}
+      {showStartupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-8 shadow-2xl max-w-sm w-full mx-4 text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-purple-400 mx-auto mb-4" />
+            <p className="text-gray-200 font-medium text-lg mb-2">
+              {startupStage === 'starting' ? '正在启动 Python 后端...' : '正在加载模型...'}
+            </p>
+            {startupStage === 'loading' && (
+              <>
+                <p className="text-sm text-gray-500 mb-3">
+                  模型加载中，首次加载可能需要较长时间（CPU 模式下大型模型约需 1-3 分钟），请耐心等待
+                </p>
+                <p className="text-xs text-gray-600">
+                  已等待 <span className="text-gray-400 font-mono">{startupElapsed}</span> 秒
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

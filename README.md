@@ -90,7 +90,7 @@ voiceclone-app/
 
 - Windows 10/11
 - Node.js 18+ 和 npm
-- Python 3.10（推荐虚拟环境 `.venv`）
+- **Python 3.10** — 必须使用 3.10，与 [CosyVoice 官方推荐环境](https://github.com/FunAudioLLM/CosyVoice) 保持一致。其他版本（3.9/3.11/3.12）可能导致依赖冲突或模型加载失败。推荐使用虚拟环境 `.venv`
 - CosyVoice 源码位于 `D:\AI\CosyVoice`（与项目同级目录）
 
 ```bash
